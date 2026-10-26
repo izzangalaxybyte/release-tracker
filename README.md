@@ -17,7 +17,7 @@ Titles are stored by source and source ID, so there is never any fuzzy title mat
 - [x] **Step 1**: SAM infrastructure, plus a checker that logs new releases to CloudWatch
 - [x] **Step 2**: notification feed in DynamoDB (no Firebase or Google services)
 - [x] **Step 3**: HTTP API (watchlist CRUD, search, upcoming, notification feed)
-- [ ] Step 4: Flutter Android app
+- [x] **Step 4**: Flutter Android app (watchlist, upcoming, search, background notifications)
 
 ## How it works
 
@@ -181,10 +181,62 @@ flutter build apk --dart-define-from-file=config.local.json   # run inside app/
 
 Don't publish an APK you've built this way, because it contains your token.
 
-Unit tests run locally against an in-memory DynamoDB ([moto](https://github.com/getmoto/moto)):
+## Android app
+
+A Flutter app in [`app/`](app/) with three tabs:
+
+- **Watchlist**: your titles, each with its latest release and next release. Swipe left to
+  remove one; tap one to open its page.
+- **Upcoming**: announced releases grouped by day, in the phone's local time.
+- **Search**: anime, manga or TV. Tap ⊕ to add a title.
+
+The ⓘ button shows when the app last checked for releases and has a **Check now** button.
+It also lists the data sources and credits.
+
+**Notifications.** A background job (Android WorkManager) polls the feed at `POLL_TIMES_UTC`.
+Every app open also polls. Each poll fetches only entries newer than the last one it saw, and
+the first launch starts from the install time, so you never get old notifications.
+Notification IDs are derived from the feed entry, so even if two polls overlap you won't see
+a duplicate. Tapping a notification opens that release's page (AniList, TVmaze, MangaDex or
+MANGA Plus). Android may delay background work while the phone is idle. On phones that kill
+background apps aggressively (Xiaomi, Oppo, Vivo, Infinix, Tecno…), set
+*Settings › Apps › Release Tracker › Battery* to **Unrestricted**.
+
+### Build and install
+
+Prerequisites: Flutter, JDK 17 and the Android SDK. On macOS:
 
 ```bash
-cd backend && .venv/bin/pytest
+brew install openjdk@17
+brew install --cask flutter android-commandlinetools
+sdkmanager --sdk_root="$HOME/Library/Android/sdk" "platform-tools" "platforms;android-36" "build-tools;36.1.0"
+flutter config --android-sdk "$HOME/Library/Android/sdk" --jdk-dir /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+```
+
+Then:
+
+```bash
+backend/.venv/bin/python scripts/write_app_config.py      # once; writes app/config.local.json
+cd app
+flutter build apk --release --dart-define-from-file=config.local.json
+```
+
+The APK is `app/build/app/outputs/flutter-apk/app-release.apk` (about 50 MB, gitignored).
+It runs on every phone. Add `--split-per-abi` to get a smaller `app-arm64-v8a-release.apk`,
+which covers almost all current phones. To
+install it, either run `adb install -r <apk>` with the phone connected over USB debugging,
+or copy the APK to the phone and open it, allowing "Install unknown apps" for your file
+manager when asked. On first launch, allow notifications.
+
+The release APK is signed with this computer's debug key, `~/.android/debug.keystore`.
+Keep that file: Android only installs an update over an existing app if the update is
+signed with the same key.
+
+## Tests
+
+```bash
+cd backend && .venv/bin/pytest     # checker, store, sources and API, against in-memory DynamoDB (moto)
+cd app && flutter test             # API client, poller, scheduling, formatting and screens, against a fake backend
 ```
 
 ## Cost

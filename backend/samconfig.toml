@@ -1,0 +1,24 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "release-tracker"
+
+[default.build.parameters]
+cached = true
+
+[default.deploy.parameters]
+profile = "release-tracker"
+resolve_s3 = true
+s3_prefix = "release-tracker"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+fail_on_empty_changeset = false
+
+[default.remote_invoke.parameters]
+profile = "release-tracker"
+
+[default.logs.parameters]
+profile = "release-tracker"
+
+[default.delete.parameters]
+profile = "release-tracker"

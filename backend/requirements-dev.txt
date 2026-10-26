@@ -1,0 +1,4 @@
+# Local tooling only. The Lambda functions use the stdlib plus the boto3 bundled in the runtime.
+boto3
+moto[dynamodb]>=5
+pytest>=8

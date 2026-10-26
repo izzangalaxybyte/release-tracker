@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  release-tracker: checks AniList (anime), TVmaze (TV) and MangaDex (manga) for new
+  episodes/chapters of titles on a personal watchlist.
+
+Parameters:
+  CheckSchedule:
+    Type: String
+    Default: cron(0 4,16 * * ? *)
+    Description: EventBridge schedule, in UTC. Default is 09:00 and 21:00 Asia/Karachi (UTC+5, no DST).
+  MangaLanguages:
+    Type: String
+    Default: en
+    Description: Comma-separated MangaDex translatedLanguage codes to track (official and fan translations both count).
+  UsePermissionsBoundary:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Attach the <stack>-boundary policy created by scripts/bootstrap_iam.py to function roles.
+  BudgetAlertEmail:
+    Type: String
+    Default: ""
+    Description: If set, creates a monthly account-wide AWS Budget that emails this address.
+  BudgetLimitUsd:
+    Type: Number
+    Default: 5
+
+Conditions:
+  HasBoundary: !Equals [!Ref UsePermissionsBoundary, "true"]
+  CreateBudget: !Not [!Equals [!Ref BudgetAlertEmail, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 120
+    CodeUri: src/
+    PermissionsBoundary: !If
+      - HasBoundary
+      - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${AWS::StackName}-boundary
+      - !Ref AWS::NoValue
+    LoggingConfig:
+      LogFormat: JSON
+      ApplicationLogLevel: INFO
+      SystemLogLevel: WARN
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref Table
+
+Resources:
+  # Single table, all timestamps ISO-8601 UTC. Layout is documented in src/tracker/store.py.
+  Table:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at  # notification feed rows expire after 90 days
+        Enabled: true
+
+  CheckerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Checks every watchlist title for new releases and notifies once per release.
+      Handler: checker_handler.handler
+      Environment:
+        Variables:
+          MANGA_LANGUAGES: !Ref MangaLanguages
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Table
+      Events:
+        Check:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref CheckSchedule
+            Description: Twice-daily release check (UTC cron)
+
+  CheckerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CheckerFunction}
+      RetentionInDays: 30
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: CreateBudget
+    Properties:
+      Budget:
+        BudgetName: !Sub ${AWS::StackName}-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetAlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetAlertEmail
+
+Outputs:
+  TableName:
+    Value: !Ref Table
+  CheckerFunctionName:
+    Value: !Ref CheckerFunction

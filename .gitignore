@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# SAM
+.aws-sam/
+samconfig.local.toml
+
+# Secrets and local env: never commit. The API URL and token live only in
+# app/config.local.json and are baked into the APK at build time.
+.env
+.env.*
+*.local.json
+!*.example.json
+*.pem
+*.jks
+*.keystore
+key.properties
+google-services.json
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,5 @@
+{
+  "API_BASE_URL": "https://<api-id>.execute-api.<region>.amazonaws.com",
+  "API_TOKEN": "<value of SSM parameter /release-tracker/api-token>",
+  "POLL_TIMES_UTC": "04:30,16:30"
+}

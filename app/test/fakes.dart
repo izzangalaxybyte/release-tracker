@@ -12,6 +12,7 @@ const token = 'test-token';
 class FakeBackend {
   final watchlist = <Map<String, dynamic>>[];
   final feed = <Map<String, dynamic>>[];
+  final history = <String, List<Map<String, dynamic>>>{};
   final requests = <http.Request>[];
   int pageSize = 100;
 
@@ -19,8 +20,8 @@ class FakeBackend {
       ApiClient(client: MockClient(_handle), baseUrl: 'https://api.test', token: withToken);
 
   static Map<String, dynamic> item(String source, String id, String title,
-          {String kind = 'anime', Map<String, dynamic>? last, Map<String, dynamic>? next}) =>
-      {'source': source, 'source_id': id, 'kind': kind, 'title': title, 'last': last, 'next': next, 'error': null};
+          {String kind = 'anime', Map<String, dynamic>? last, Map<String, dynamic>? next, String? url}) =>
+      {'source': source, 'source_id': id, 'kind': kind, 'title': title, 'url': url, 'last': last, 'next': next, 'error': null};
 
   Future<http.Response> _handle(http.Request request) async {
     requests.add(request);
@@ -48,6 +49,17 @@ class FakeBackend {
         final after = q['after'] ?? '';
         final rows = feed.where((r) => (r['id'] as String).compareTo(after) > 0).take(pageSize).toList();
         return _json(200, {'items': rows, 'cursor': rows.isEmpty ? q['after'] : rows.last['id'], 'more': rows.length == pageSize});
+    }
+    if (request.method == 'GET' && path.startsWith('/releases/')) {
+      final id = path.split('/').last;
+      final item = watchlist.where((i) => i['source_id'] == id).firstOrNull;
+      return _json(200, {
+        'source': path.split('/')[2],
+        'source_id': id,
+        'since': '2025-10-26T04:00:00Z',
+        'items': history[id] ?? [],
+        'next': item?['next'],
+      });
     }
     if (request.method == 'DELETE' && path.startsWith('/watchlist/')) {
       final id = path.split('/').last;

@@ -134,6 +134,7 @@ per second (burst 20), so a leaked URL can't run up your bill.
 | `DELETE /watchlist/{source}/{source_id}` | Remove a title. Returns 204, or 404 |
 | `GET /search?type=anime\|manga\|tv&q=…` | Search AniList, MangaDex or TVmaze (top 10). Each result has `on_watchlist` |
 | `GET /upcoming` | Titles with a known next release, soonest first. Served from DynamoDB with no calls to the sources |
+| `GET /releases/{source}/{source_id}?days=365` | Every release in the last `days` (default 365, max 730), newest first, plus `next`. Fetched live from the source. Works for any title, not just ones on your watchlist |
 | `GET /notifications?after=<cursor>&limit=100` | The feed, oldest first. Returns `items`, `cursor` (pass it back next time) and `more`. On first launch, pass the install time (`2026-10-26T10:00:00Z`) to skip older rows |
 
 `scripts/api.sh` calls the deployed API with the URL and token from `app/config.local.json`,
@@ -144,6 +145,7 @@ scripts/api.sh GET /watchlist
 scripts/api.sh GET '/search?type=anime&q=frieren'
 scripts/api.sh POST /watchlist '{"source":"anilist","source_id":"154587"}'
 scripts/api.sh GET /upcoming
+scripts/api.sh GET /releases/anilist/21                        # One Piece's last 12 months
 scripts/api.sh GET '/notifications?after=2026-10-26T00:00:00Z'
 scripts/api.sh DELETE /watchlist/anilist/154587
 NO_AUTH=1 scripts/api.sh GET /watchlist     # 401
@@ -186,9 +188,16 @@ Don't publish an APK you've built this way, because it contains your token.
 A Flutter app in [`app/`](app/) with three tabs:
 
 - **Watchlist**: your titles, each with its latest release and next release. Swipe left to
-  remove one; tap one to open its page.
+  remove one; tap one to see its details.
 - **Upcoming**: announced releases grouped by day, in the phone's local time.
 - **Search**: anime, manga or TV. Tap ⊕ to add a title.
+
+Tapping a title in Watchlist or Upcoming opens its **detail screen**. It shows the next
+release, then every release from the last 12 months grouped by month, with local dates and
+times. Tap a release to open it (the AniList, TVmaze, MangaDex or MANGA Plus page). The top
+bar opens the title's page or removes it. For manga the history only covers chapters
+uploaded to MangaDex; for some series, such as One Piece, that's only the recent official
+English chapters.
 
 The ⓘ button shows when the app last checked for releases and has a **Check now** button.
 It also lists the data sources and credits.

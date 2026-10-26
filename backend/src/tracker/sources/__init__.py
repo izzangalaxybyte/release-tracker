@@ -8,7 +8,8 @@ Every source exposes ``fetch(source_id, now, after_seq) -> Snapshot``:
 
 Only releases at or before ``now`` count as released.
 
-Each also exposes ``search(query, limit) -> list[SearchResult]``.
+Each also exposes ``search(query, limit) -> list[SearchResult]`` and
+``history(source_id, since, now) -> list[Release]`` (releases in that window, newest first).
 """
 
 from . import anilist, mangadex, tvmaze
@@ -24,4 +25,10 @@ SEARCHERS = {
     "anime": anilist.search,
     "tv": tvmaze.search,
     "manga": mangadex.search,
+}
+
+HISTORIES = {
+    "anilist": anilist.history,
+    "tvmaze": tvmaze.history,
+    "mangadex": mangadex.history,
 }

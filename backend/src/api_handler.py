@@ -34,5 +34,6 @@ def handler(event, context):
         store=_store,
         fetchers=sources.FETCHERS,
         searchers=sources.SEARCHERS,
+        histories=sources.HISTORIES,
         now=utcnow(),
     )

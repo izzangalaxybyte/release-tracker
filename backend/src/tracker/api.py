@@ -9,12 +9,12 @@ import json
 import logging
 import urllib.error
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Callable
 
 from .http import HttpError
-from .models import WatchItem, to_iso
+from .models import Release, WatchItem, to_iso
 from .store import Store
 from .watchlist import add_title, validate_ref
 
@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 SEARCH_LIMIT = 10
 MAX_QUERY_LENGTH = 100
 MAX_NOTIFICATIONS = 100
+DEFAULT_HISTORY_DAYS = 365
+MAX_HISTORY_DAYS = 730
 UPSTREAM_ERRORS = (HttpError, urllib.error.URLError, TimeoutError)
 
 
@@ -38,6 +40,7 @@ class Deps:
     store: Store
     fetchers: dict
     searchers: dict
+    histories: dict
     now: datetime
 
 
@@ -115,6 +118,33 @@ def upcoming(req: Request, deps: Deps):
     return 200, {"items": [item_json(i) for i in items]}
 
 
+def release_history(req: Request, deps: Deps):
+    """Every release of a title in the last `days` (default 365), newest first, plus the next one if known."""
+    source = req.path.get("source")
+    source_id = _valid_ref(source, req.path.get("source_id"))
+    try:
+        days = min(max(int(req.query.get("days", DEFAULT_HISTORY_DAYS)), 1), MAX_HISTORY_DAYS)
+    except ValueError:
+        raise ApiError(400, "days must be a number") from None
+    since = deps.now - timedelta(days=days)
+    try:
+        releases = deps.histories[source](source_id, since, deps.now)
+    except HttpError as e:
+        if e.status in (400, 404):
+            raise ApiError(404, f"{source} has no title {source_id}") from None
+        raise ApiError(502, f"{source} is unavailable") from None
+    except UPSTREAM_ERRORS:
+        raise ApiError(502, f"{source} is unavailable") from None
+    item = deps.store.get(source, source_id)
+    return 200, {
+        "source": source,
+        "source_id": source_id,
+        "since": to_iso(since),
+        "items": [release_json(r) for r in releases],
+        "next": {"label": item.next_label, "at": to_iso(item.next_release_at)} if item and item.next_label else None,
+    }
+
+
 def notifications(req: Request, deps: Deps):
     """Feed the app polls. `after` is a cursor: the `cursor` from the previous response, or an
     ISO-8601 UTC time (e.g. the install time) to skip everything older."""
@@ -138,6 +168,7 @@ ROUTES: dict[str, Callable] = {
     "GET /search": search,
     "GET /upcoming": upcoming,
     "GET /notifications": notifications,
+    "GET /releases/{source}/{source_id}": release_history,
 }
 
 
@@ -192,6 +223,10 @@ def item_json(item: WatchItem) -> dict:
         "checked_at": to_iso(item.checked_at),
         "error": item.last_error,
     }
+
+
+def release_json(release: Release) -> dict:
+    return {"key": release.key, "label": release.label, "released_at": to_iso(release.released_at), "url": release.url}
 
 
 def notification_json(row: dict) -> dict:

@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 const kindLabels = {'anime': 'Anime', 'manga': 'Manga', 'tv': 'TV'};
 const kindIcons = {'anime': Icons.animation, 'manga': Icons.menu_book, 'tv': Icons.tv};
+const sourceNames = {'anilist': 'AniList', 'tvmaze': 'TVmaze', 'mangadex': 'MangaDex'};
 
 Future<void> openUrl(String? url) async {
   if (url == null) return;

@@ -4,6 +4,7 @@ import '../api.dart';
 import '../format.dart';
 import '../watchlist_model.dart';
 import '../widgets.dart';
+import 'title_screen.dart';
 
 class WatchlistScreen extends StatelessWidget {
   const WatchlistScreen({super.key, required this.model});
@@ -76,15 +77,19 @@ class _DismissibleTile extends StatelessWidget {
           messenger.showSnackBar(SnackBar(content: Text('Couldn\'t remove ${item.title}: $e')));
         }
       },
-      child: WatchTile(item: item),
+      child: WatchTile(item: item, onTap: () => openTitle(context, item, model)),
     );
   }
 }
 
+void openTitle(BuildContext context, WatchItem item, WatchlistModel model) =>
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => TitleScreen(item: item, model: model)));
+
 class WatchTile extends StatelessWidget {
-  const WatchTile({super.key, required this.item});
+  const WatchTile({super.key, required this.item, this.onTap});
 
   final WatchItem item;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +125,7 @@ class WatchTile extends StatelessWidget {
         ],
       ),
       isThreeLine: next?.at != null || item.error != null,
-      onTap: () => openUrl(item.url),
+      onTap: onTap,
     );
   }
 }

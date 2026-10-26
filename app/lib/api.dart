@@ -129,6 +129,25 @@ class FeedPage {
   final bool more;
 }
 
+class HistoryRelease {
+  HistoryRelease(this.label, this.at, this.url);
+
+  factory HistoryRelease.fromJson(Map<String, dynamic> json) =>
+      HistoryRelease(json['label'] as String, _time(json['released_at']), json['url'] as String?);
+
+  final String label;
+  final DateTime? at; // UTC
+  final String? url;
+}
+
+class ReleaseHistory {
+  ReleaseHistory(this.items, this.since, this.next);
+
+  final List<HistoryRelease> items; // newest first
+  final DateTime since;
+  final ReleaseInfo? next;
+}
+
 class ApiClient {
   ApiClient({http.Client? client, String? baseUrl, String? token})
       : _client = client ?? http.Client(),
@@ -158,6 +177,17 @@ class ApiClient {
 
   Future<void> remove(String source, String sourceId) =>
       _send('DELETE', '/watchlist/${Uri.encodeComponent(source)}/${Uri.encodeComponent(sourceId)}', ok: {204, 404});
+
+  /// Every release in the last [days] days, newest first, plus the next one if known.
+  Future<ReleaseHistory> releases(String source, String sourceId, {int days = 365}) async {
+    final body = await _send('GET', '/releases/${Uri.encodeComponent(source)}/${Uri.encodeComponent(sourceId)}',
+        query: {'days': '$days'});
+    return ReleaseHistory(
+      _items(body).map(HistoryRelease.fromJson).toList(),
+      DateTime.parse(body['since'] as String),
+      ReleaseInfo.fromJson(body['next'] as Map<String, dynamic>?, 'at'),
+    );
+  }
 
   Future<FeedPage> notifications({String? after}) async {
     final body = await _send('GET', '/notifications', query: {'after': ?after});

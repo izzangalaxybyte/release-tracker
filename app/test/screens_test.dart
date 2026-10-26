@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:release_tracker/screens/search_screen.dart';
+import 'package:release_tracker/screens/title_screen.dart';
 import 'package:release_tracker/screens/upcoming_screen.dart';
 import 'package:release_tracker/screens/watchlist_screen.dart';
 import 'package:release_tracker/watchlist_model.dart';
@@ -16,7 +17,7 @@ void main() {
   setUp(() {
     backend = FakeBackend()
       ..watchlist.addAll([
-        FakeBackend.item('tvmaze', '32158', 'FBI', kind: 'tv',
+        FakeBackend.item('tvmaze', '32158', 'FBI', kind: 'tv', url: 'https://www.tvmaze.com/shows/32158/fbi',
             last: {'label': 'S09E03 · White Rock', 'released_at': '2026-10-20T00:00:00Z'},
             next: {'label': 'S09E04 · Reticence', 'at': '2099-10-27T00:00:00Z'}),
         FakeBackend.item('mangadex', 'a1c7c817-4e59-43b7-9365-09675a149a6f', 'One Piece', kind: 'manga',
@@ -66,5 +67,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
     expect(model.contains('anilist#154587'), isTrue);
+  });
+
+  testWidgets('tapping a title shows its last 12 months of releases by month', (tester) async {
+    backend.history['32158'] = [
+      {'key': 'tv#3', 'label': 'S09E03 · White Rock', 'released_at': '2026-10-20T00:00:00Z', 'url': 'https://t.test/3'},
+      {'key': 'tv#2', 'label': 'S09E02 · Omissions', 'released_at': '2026-10-13T00:00:00Z', 'url': 'https://t.test/2'},
+      {'key': 'tv#1', 'label': 'S08E22 · Finale', 'released_at': '2026-05-19T00:00:00Z', 'url': 'https://t.test/1'},
+    ];
+    await model.refresh();
+    await tester.pumpWidget(host(WatchlistScreen(model: model)));
+    await tester.tap(find.text('FBI'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TitleScreen), findsOneWidget);
+    expect(find.text('3 releases in the last 12 months'), findsOneWidget);
+    expect(find.textContaining('October 2026 · 2'), findsOneWidget);
+    expect(find.textContaining('May 2026 · 1'), findsOneWidget);
+    expect(find.text('S09E02 · Omissions'), findsOneWidget);
+    expect(find.text('Next: S09E04 · Reticence'), findsOneWidget);
+    expect(find.byTooltip('Open on TVmaze'), findsOneWidget);
+  });
+
+  testWidgets('manga detail explains the missing schedule; remove pops back', (tester) async {
+    await model.refresh();
+    await tester.pumpWidget(host(WatchlistScreen(model: model)));
+    await tester.tap(find.text('One Piece'));
+    await tester.pumpAndSettle();
+    expect(find.text('No releases in the last 12 months'), findsOneWidget);
+    expect(find.text('No release schedule for manga'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Remove from watchlist'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TitleScreen), findsNothing);
+    expect(find.text('One Piece'), findsNothing);
+    expect(backend.watchlist.map((i) => i['title']), ['FBI']);
   });
 }

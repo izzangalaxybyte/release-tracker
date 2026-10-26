@@ -154,6 +154,12 @@ Resources:
             ApiId: !Ref HttpApi
             Method: GET
             Path: /notifications
+        ReleaseHistory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /releases/{source}/{source_id}
 
   ApiLogGroup:
     Type: AWS::Logs::LogGroup

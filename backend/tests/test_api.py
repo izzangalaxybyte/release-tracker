@@ -25,6 +25,14 @@ def fake_fetch(source_id, now, after_seq):
                     released=[Release("ep#00010", Decimal(10), "Episode 10", NOW)], upcoming=upcoming)
 
 
+def fake_history(source_id, since, now):
+    if source_id == "404":
+        raise HttpError(404, "https://example", "not found")
+    weekly = [Release(f"ep#{n:05d}", Decimal(n), f"Episode {n}", now - timedelta(weeks=60 - n), "https://x.test")
+              for n in range(1, 60)]
+    return [r for r in reversed(weekly) if since <= r.released_at <= now]
+
+
 def fake_search(query, limit):
     return [SearchResult("anilist", "21", "ONE PIECE", 1999, "RELEASING", None, None, "TV"),
             SearchResult("anilist", "22", "Other", 2001, "FINISHED", None, None, "TV")]
@@ -41,13 +49,14 @@ def call():
         )
         store = Store(table=table)
         fetchers = {"anilist": fake_fetch, "tvmaze": fake_fetch, "mangadex": fake_fetch}
+        histories = {"anilist": fake_history, "tvmaze": fake_history, "mangadex": fake_history}
 
         def _call(route_key, *, token=TOKEN, query=None, path=None, body=None, expected_token=lambda: TOKEN):
             event = {"routeKey": route_key, "headers": {"authorization": f"Bearer {token}"} if token else {},
                      "queryStringParameters": query, "pathParameters": path,
                      "body": json.dumps(body) if body is not None else None}
             resp = api.handle(event, expected_token=expected_token, store=store, fetchers=fetchers,
-                              searchers={"anime": fake_search}, now=NOW)
+                              searchers={"anime": fake_search}, histories=histories, now=NOW)
             return resp["statusCode"], json.loads(resp["body"]) if "body" in resp else None
 
         _call.store = store
@@ -117,3 +126,24 @@ def test_notifications_cursor(call):
 
     paged = call("GET /notifications", query={"limit": "2"})[1]
     assert len(paged["items"]) == 2 and paged["more"] is True
+
+
+def test_release_history_window_and_next(call):
+    call("POST /watchlist", body={"source": "anilist", "source_id": "21"})
+    status, body = call("GET /releases/{source}/{source_id}", path={"source": "anilist", "source_id": "21"})
+    assert status == 200
+    assert body["since"] == "2025-10-26T04:00:00Z"
+    assert len(body["items"]) == 52  # releases 1-52 weeks old
+    assert body["items"][0] == {"key": "ep#00059", "label": "Episode 59", "released_at": "2026-10-19T04:00:00Z", "url": "https://x.test"}
+    assert body["next"]["label"] == "Episode 11"
+
+    short = call("GET /releases/{source}/{source_id}", path={"source": "anilist", "source_id": "21"}, query={"days": "30"})[1]
+    assert len(short["items"]) == 4  # 1-4 weeks old
+
+
+def test_release_history_works_for_titles_not_on_watchlist_and_validates(call):
+    status, body = call("GET /releases/{source}/{source_id}", path={"source": "tvmaze", "source_id": "7"})
+    assert status == 200 and body["next"] is None
+    assert call("GET /releases/{source}/{source_id}", path={"source": "tvmaze", "source_id": "404"})[0] == 404
+    assert call("GET /releases/{source}/{source_id}", path={"source": "netflix", "source_id": "7"})[0] == 400
+    assert call("GET /releases/{source}/{source_id}", path={"source": "tvmaze", "source_id": "7"}, query={"days": "x"})[0] == 400

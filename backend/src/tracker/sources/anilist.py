@@ -105,5 +105,36 @@ def fetch(source_id: str, now: datetime, after_seq: Decimal | None) -> Snapshot:
     )
 
 
+HISTORY_QUERY = """
+query ($id: Int, $since: Int, $now: Int, $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    airingSchedules(mediaId: $id, airingAt_greater: $since, airingAt_lesser: $now, sort: TIME_DESC) {
+      episode
+      airingAt
+    }
+  }
+}
+"""
+HISTORY_MAX_PAGES = 10
+
+
+def history(source_id: str, since: datetime, now: datetime) -> list[Release]:
+    """Episodes that aired (in Japan) between since and now, newest first."""
+    url = f"https://anilist.co/anime/{int(source_id)}"
+    variables = {"id": int(source_id), "since": int(since.timestamp()) - 1, "now": int(now.timestamp()) + 1}
+    releases = []
+    for page in range(1, HISTORY_MAX_PAGES + 1):
+        data = request_json(URL, method="POST", body={"query": HISTORY_QUERY, "variables": {**variables, "page": page}})
+        if data.get("errors"):
+            raise HttpError(200, URL, str(data["errors"]))
+        result = data["data"]["Page"]
+        releases += [_release(r["episode"], datetime.fromtimestamp(r["airingAt"], timezone.utc), url)
+                     for r in result["airingSchedules"]]
+        if not result["pageInfo"]["hasNextPage"]:
+            break
+    return releases
+
+
 def _release(episode: int, aired_at: datetime | None, url: str | None) -> Release:
     return Release(key=f"ep#{episode:05d}", seq=Decimal(episode), label=f"Episode {episode}", released_at=aired_at, url=url)

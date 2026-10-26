@@ -4,6 +4,7 @@ import '../api.dart';
 import '../format.dart';
 import '../watchlist_model.dart';
 import '../widgets.dart';
+import 'watchlist_screen.dart' show openTitle;
 
 class UpcomingScreen extends StatelessWidget {
   const UpcomingScreen({super.key, required this.model});
@@ -42,7 +43,7 @@ class UpcomingScreen extends StatelessWidget {
                         child: Text(row, style: Theme.of(context).textTheme.titleSmall),
                       );
                     }
-                    return _UpcomingTile(item: row as WatchItem);
+                    return _UpcomingTile(item: row as WatchItem, model: model);
                   },
                 ),
         );
@@ -52,9 +53,10 @@ class UpcomingScreen extends StatelessWidget {
 }
 
 class _UpcomingTile extends StatelessWidget {
-  const _UpcomingTile({required this.item});
+  const _UpcomingTile({required this.item, required this.model});
 
   final WatchItem item;
+  final WatchlistModel model;
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +74,7 @@ class _UpcomingTile extends StatelessWidget {
           Text(formatRelative(next.at!), style: theme.textTheme.bodySmall),
         ],
       ),
-      onTap: () => openUrl(item.url),
+      onTap: () => openTitle(context, item, model),
     );
   }
 }

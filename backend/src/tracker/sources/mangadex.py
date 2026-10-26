@@ -16,6 +16,7 @@ from ..models import Release, SearchResult, Snapshot, from_iso
 
 BASE = "https://api.mangadex.org"
 MAX_RELEASES = 50
+HISTORY_MAX_ROWS = 1000  # 10 feed pages
 CONTENT_RATINGS = ["safe", "suggestive", "erotica", "pornographic"]
 SEARCH_CONTENT_RATINGS = ["safe", "suggestive", "erotica"]  # MangaDex's own search default
 
@@ -46,13 +47,62 @@ def search(query: str, limit: int = 10) -> list[SearchResult]:
 
 def fetch(source_id: str, now: datetime, after_seq: Decimal | None) -> Snapshot:
     manga = request_json(f"{BASE}/manga/{source_id}?includes%5B%5D=cover_art")["data"]
+    feed = request_json(f"{BASE}/manga/{source_id}/feed?{urlencode(_feed_params())}")
+
+    released = sorted(_group_chapters(feed["data"], now).values(), key=lambda r: r.seq)
+    if after_seq is None:
+        released = released[-1:]
+    else:
+        released = [r for r in released if r.seq > after_seq][-MAX_RELEASES:]
+
+    attrs = manga["attributes"]
+    return Snapshot(
+        title=_title(attrs),
+        status=attrs.get("status"),
+        url=f"https://mangadex.org/title/{source_id}",
+        image=_cover_url(source_id, manga.get("relationships", [])),
+        released=released,
+    )
+
+
+def history(source_id: str, since: datetime, now: datetime) -> list[Release]:
+    """Chapters first released between since and now, newest first.
+
+    Pages back through the feed until it passes `since`, so the chapter numbers already out
+    before the window are known: a chapter only counts if its number is higher than every
+    chapter before it, which drops late re-uploads of old chapters.
+    """
+    rows, offset = [], 0
+    while offset < HISTORY_MAX_ROWS:
+        page = request_json(f"{BASE}/manga/{source_id}/feed?{urlencode(_feed_params(offset))}")
+        rows += page["data"]
+        offset += len(page["data"])
+        oldest = from_iso(page["data"][-1]["attributes"].get("readableAt")) if page["data"] else None
+        if not page["data"] or offset >= page["total"] or (oldest and oldest < since):
+            break
+
+    releases, highest = [], None
+    for release in sorted(_group_chapters(rows, now).values(), key=lambda r: r.released_at):
+        if highest is not None and release.seq <= highest:
+            continue
+        highest = release.seq
+        if release.released_at >= since:
+            releases.append(release)
+    return releases[::-1]
+
+
+def _feed_params(offset: int = 0) -> list[tuple[str, str]]:
     params = [("translatedLanguage[]", code) for code in languages()]
     params += [("contentRating[]", rating) for rating in CONTENT_RATINGS]
-    params += [("order[readableAt]", "desc"), ("limit", "100"), ("includeExternalUrl", "1"), ("includeFuturePublishAt", "0")]
-    feed = request_json(f"{BASE}/manga/{source_id}/feed?{urlencode(params)}")
+    params += [("order[readableAt]", "desc"), ("limit", "100"), ("offset", str(offset)),
+               ("includeExternalUrl", "1"), ("includeFuturePublishAt", "0")]
+    return params
 
+
+def _group_chapters(rows: list[dict], now: datetime) -> dict[Decimal, Release]:
+    """One Release per chapter number: its earliest readable upload."""
     by_number: dict[Decimal, Release] = {}
-    for chapter in feed["data"]:
+    for chapter in rows:
         attrs = chapter["attributes"]
         number = _chapter_number(attrs.get("chapter"))
         readable_at = from_iso(attrs.get("readableAt"))
@@ -68,21 +118,7 @@ def fetch(source_id: str, now: datetime, after_seq: Decimal | None) -> Snapshot:
                 released_at=readable_at,
                 url=attrs.get("externalUrl") or f"https://mangadex.org/chapter/{chapter['id']}",
             )
-
-    released = sorted(by_number.values(), key=lambda r: r.seq)
-    if after_seq is None:
-        released = released[-1:]
-    else:
-        released = [r for r in released if r.seq > after_seq][-MAX_RELEASES:]
-
-    attrs = manga["attributes"]
-    return Snapshot(
-        title=_title(attrs),
-        status=attrs.get("status"),
-        url=f"https://mangadex.org/title/{source_id}",
-        image=_cover_url(source_id, manga.get("relationships", [])),
-        released=released,
-    )
+    return by_number
 
 
 def _chapter_number(value: str | None) -> Decimal | None:

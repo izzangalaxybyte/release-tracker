@@ -65,6 +65,13 @@ def fetch(source_id: str, now: datetime, after_seq: Decimal | None) -> Snapshot:
     )
 
 
+def history(source_id: str, since: datetime, now: datetime) -> list[Release]:
+    """Episodes that aired between since and now, newest first."""
+    episodes = request_json(f"{BASE}/shows/{int(source_id)}/episodes")
+    aired = (r for r in map(_release, episodes) if r and since <= r.released_at <= now)
+    return sorted(aired, key=lambda r: r.seq, reverse=True)
+
+
 def _release(ep: dict | None) -> Release | None:
     if not ep or not ep.get("airstamp"):
         return None

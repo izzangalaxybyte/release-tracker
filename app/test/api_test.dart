@@ -51,6 +51,20 @@ void main() {
     expect(results.single.title, 'Frieren');
   });
 
+  test('release history parses items, window and next', () async {
+    backend.watchlist.add(FakeBackend.item('tvmaze', '32158', 'FBI', kind: 'tv',
+        next: {'label': 'S09E04 · Reticence', 'at': '2026-10-27T00:00:00Z'}));
+    backend.history['32158'] = [
+      {'key': 'tv#2', 'label': 'S09E03 · White Rock', 'released_at': '2026-10-20T00:00:00Z', 'url': 'https://t.test/2'},
+    ];
+    final history = await api.releases('tvmaze', '32158');
+    expect(backend.requests.last.url.path, '/releases/tvmaze/32158');
+    expect(backend.requests.last.url.queryParameters, {'days': '365'});
+    expect(history.items.single.at, DateTime.utc(2026, 10, 20));
+    expect(history.since, DateTime.utc(2025, 10, 26, 4));
+    expect(history.next!.label, 'S09E04 · Reticence');
+  });
+
   group('format', () {
     final now = DateTime(2026, 10, 26, 12); // local noon
 

@@ -22,9 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend" / "src
 import boto3  # noqa: E402
 
 from tracker import sources  # noqa: E402
-from tracker.checker import apply_snapshot  # noqa: E402
 from tracker.models import SOURCES, WatchItem, to_iso, utcnow  # noqa: E402
 from tracker.store import Store  # noqa: E402
+from tracker.watchlist import add_title, validate_ref  # noqa: E402
 
 
 def session() -> boto3.Session:
@@ -54,11 +54,9 @@ def cmd_peek(args):
 
 
 def cmd_add(args):
-    store, now = open_store(args.stack), utcnow()
-    snap = sources.FETCHERS[args.source](args.source_id, now, None)
-    item = WatchItem(source=args.source, source_id=args.source_id, title=snap.title, added_at=now)
-    apply_snapshot(item, snap, now)  # baseline now, so existing releases never notify
-    print(("Added " if store.add(item) else "Already on watchlist: ") + show(item))
+    source_id = validate_ref(args.source, args.source_id)
+    item, created = add_title(open_store(args.stack), args.source, source_id, sources.FETCHERS, utcnow())
+    print(("Added " if created else "Already on watchlist: ") + show(item))
 
 
 def cmd_list(args):

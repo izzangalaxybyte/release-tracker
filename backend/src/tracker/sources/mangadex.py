@@ -12,15 +12,36 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
 from ..http import request_json
-from ..models import Release, Snapshot, from_iso
+from ..models import Release, SearchResult, Snapshot, from_iso
 
 BASE = "https://api.mangadex.org"
 MAX_RELEASES = 50
 CONTENT_RATINGS = ["safe", "suggestive", "erotica", "pornographic"]
+SEARCH_CONTENT_RATINGS = ["safe", "suggestive", "erotica"]  # MangaDex's own search default
 
 
 def languages() -> list[str]:
     return [code.strip() for code in os.environ.get("MANGA_LANGUAGES", "en").split(",") if code.strip()]
+
+
+def search(query: str, limit: int = 10) -> list[SearchResult]:
+    # Popularity, not relevance: relevance ranks fan anthologies and doujinshi above the main series.
+    params = [("title", query), ("limit", str(limit)), ("includes[]", "cover_art"), ("order[followedCount]", "desc")]
+    params += [("contentRating[]", rating) for rating in SEARCH_CONTENT_RATINGS]
+    results = []
+    for manga in request_json(f"{BASE}/manga?{urlencode(params)}")["data"]:
+        attrs = manga["attributes"]
+        results.append(SearchResult(
+            source="mangadex",
+            source_id=manga["id"],
+            title=_title(attrs),
+            year=attrs.get("year"),
+            status=attrs.get("status"),
+            image=_cover_url(manga["id"], manga.get("relationships", [])),
+            url=f"https://mangadex.org/title/{manga['id']}",
+            detail=attrs.get("publicationDemographic"),
+        ))
+    return results
 
 
 def fetch(source_id: str, now: datetime, after_seq: Decimal | None) -> Snapshot:

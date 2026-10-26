@@ -6,12 +6,31 @@ ordered by episode number. Data is CC BY-SA, see https://www.tvmaze.com/api.
 
 from datetime import datetime
 from decimal import Decimal
+from urllib.parse import urlencode
 
 from ..http import request_json
-from ..models import Release, Snapshot, Upcoming, from_iso
+from ..models import Release, SearchResult, Snapshot, Upcoming, from_iso
 
 BASE = "https://api.tvmaze.com"
 MAX_RELEASES = 50
+
+
+def search(query: str, limit: int = 10) -> list[SearchResult]:
+    results = []
+    for row in request_json(f"{BASE}/search/shows?{urlencode({'q': query})}")[:limit]:
+        show = row["show"]
+        premiered = show.get("premiered")
+        results.append(SearchResult(
+            source="tvmaze",
+            source_id=str(show["id"]),
+            title=show["name"],
+            year=int(premiered[:4]) if premiered else None,
+            status=show.get("status"),
+            image=(show.get("image") or {}).get("medium"),
+            url=show.get("url"),
+            detail=(show.get("network") or show.get("webChannel") or {}).get("name"),
+        ))
+    return results
 
 
 def fetch(source_id: str, now: datetime, after_seq: Decimal | None) -> Snapshot:

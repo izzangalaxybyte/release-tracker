@@ -95,6 +95,72 @@ Resources:
       LogGroupName: !Sub /aws/lambda/${CheckerFunction}
       RetentionInDays: 30
 
+  # Low throttle so a leaked URL can't run up the bill; the app makes a handful of calls a day.
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: HTTP API for the app - watchlist, search, upcoming releases, notification feed.
+      Handler: api_handler.handler
+      Timeout: 15
+      Environment:
+        Variables:
+          API_TOKEN_PARAM: !Sub /${AWS::StackName}/api-token
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Table
+        - SSMParameterReadPolicy:
+            ParameterName: !Sub ${AWS::StackName}/api-token
+      Events:
+        ListWatchlist:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /watchlist
+        AddToWatchlist:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /watchlist
+        RemoveFromWatchlist:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: DELETE
+            Path: /watchlist/{source}/{source_id}
+        Search:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /search
+        Upcoming:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /upcoming
+        Notifications:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /notifications
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 30
+
   MonthlyBudget:
     Type: AWS::Budgets::Budget
     Condition: CreateBudget
@@ -129,3 +195,6 @@ Outputs:
     Value: !Ref Table
   CheckerFunctionName:
     Value: !Ref CheckerFunction
+  ApiUrl:
+    Description: Never commit this. scripts/write_app_config.py copies it into the gitignored app/config.local.json.
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}

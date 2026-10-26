@@ -51,6 +51,18 @@ class Snapshot:
         return self.released[-1] if self.released else None
 
 
+@dataclass(frozen=True)
+class SearchResult:
+    source: str
+    source_id: str
+    title: str
+    year: int | None
+    status: str | None
+    image: str | None
+    url: str | None
+    detail: str | None = None  # anime format, TV network, or manga demographic
+
+
 @dataclass
 class WatchItem:
     """A watchlist entry plus the last-seen state the checker compares against."""

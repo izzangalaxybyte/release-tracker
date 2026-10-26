@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from ..http import HttpError, request_json
-from ..models import Release, Snapshot, Upcoming
+from ..models import Release, SearchResult, Snapshot, Upcoming
 
 URL = "https://graphql.anilist.co"
 MAX_RELEASES = 50
@@ -30,6 +30,43 @@ query ($id: Int, $now: Int, $after: Int, $perPage: Int) {
   }
 }
 """
+
+
+SEARCH_QUERY = """
+query ($q: String, $perPage: Int) {
+  Page(perPage: $perPage) {
+    media(search: $q, type: ANIME, isAdult: false, sort: SEARCH_MATCH) {
+      id
+      title { romaji english }
+      status
+      format
+      seasonYear
+      startDate { year }
+      siteUrl
+      coverImage { medium }
+    }
+  }
+}
+"""
+
+
+def search(query: str, limit: int = 10) -> list[SearchResult]:
+    data = request_json(URL, method="POST", body={"query": SEARCH_QUERY, "variables": {"q": query, "perPage": limit}})
+    if data.get("errors"):
+        raise HttpError(200, URL, str(data["errors"]))
+    return [
+        SearchResult(
+            source="anilist",
+            source_id=str(m["id"]),
+            title=m["title"].get("english") or m["title"]["romaji"],
+            year=m.get("seasonYear") or (m.get("startDate") or {}).get("year"),
+            status=m.get("status"),
+            image=(m.get("coverImage") or {}).get("medium"),
+            url=m.get("siteUrl"),
+            detail=m.get("format"),
+        )
+        for m in data["data"]["Page"]["media"]
+    ]
 
 
 def fetch(source_id: str, now: datetime, after_seq: Decimal | None) -> Snapshot:

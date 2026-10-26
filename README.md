@@ -16,7 +16,7 @@ Titles are stored by source and source ID, so there is never any fuzzy title mat
 
 - [x] **Step 1**: SAM infrastructure, plus a checker that logs new releases to CloudWatch
 - [x] **Step 2**: notification feed in DynamoDB (no Firebase or Google services)
-- [ ] Step 3: HTTP API (watchlist CRUD, search, upcoming, notification feed)
+- [x] **Step 3**: HTTP API (watchlist CRUD, search, upcoming, notification feed)
 - [ ] Step 4: Flutter Android app
 
 ## How it works
@@ -94,7 +94,20 @@ Optional parameters, passed as `sam deploy --parameter-overrides Key=Value ...`:
 
 The DynamoDB table has `DeletionPolicy: Retain`, so `sam delete` keeps your watchlist.
 
-### 3. Add titles (until the API and app exist)
+### 3. Create the API token and the app config
+
+```bash
+AWS_PROFILE=release-tracker backend/.venv/bin/python scripts/write_app_config.py
+```
+
+This generates a random token and stores it as an SSM SecureString at
+`/release-tracker/api-token`. It then writes the API URL and token into the gitignored
+`app/config.local.json`, without printing either. Re-run it with `--rotate` to replace the
+token, then rebuild and reinstall the APK. The API picks up a new token within 5 minutes.
+
+### 4. Add titles from the command line (optional)
+
+You can also add titles through the API or the app.
 
 ```bash
 export AWS_PROFILE=release-tracker
@@ -108,6 +121,33 @@ $PY scripts/watchlist.py list
 
 IDs are in each site's URLs: `anilist.co/anime/21`, `tvmaze.com/shows/32158/fbi`,
 `mangadex.org/title/<uuid>`.
+
+## API
+
+Every request needs `Authorization: Bearer <token>`. The API is throttled to 10 requests
+per second (burst 20), so a leaked URL can't run up your bill.
+
+| Route | Description |
+|---|---|
+| `GET /watchlist` | Your titles, each with `last` (latest release) and `next` (upcoming release, if known) |
+| `POST /watchlist` `{"source","source_id"}` | Add a title. Its current latest release becomes the baseline. Returns 201, or 409 if it's already on the watchlist, or 404 if the source doesn't know the ID |
+| `DELETE /watchlist/{source}/{source_id}` | Remove a title. Returns 204, or 404 |
+| `GET /search?type=anime\|manga\|tv&q=…` | Search AniList, MangaDex or TVmaze (top 10). Each result has `on_watchlist` |
+| `GET /upcoming` | Titles with a known next release, soonest first. Served from DynamoDB with no calls to the sources |
+| `GET /notifications?after=<cursor>&limit=100` | The feed, oldest first. Returns `items`, `cursor` (pass it back next time) and `more`. On first launch, pass the install time (`2026-10-26T10:00:00Z`) to skip older rows |
+
+`scripts/api.sh` calls the deployed API with the URL and token from `app/config.local.json`,
+and never prints either:
+
+```bash
+scripts/api.sh GET /watchlist
+scripts/api.sh GET '/search?type=anime&q=frieren'
+scripts/api.sh POST /watchlist '{"source":"anilist","source_id":"154587"}'
+scripts/api.sh GET /upcoming
+scripts/api.sh GET '/notifications?after=2026-10-26T00:00:00Z'
+scripts/api.sh DELETE /watchlist/anilist/154587
+NO_AUTH=1 scripts/api.sh GET /watchlist     # 401
+```
 
 ## Test the checker and feed
 
@@ -135,7 +175,7 @@ settings from `app/config.local.json`, which is gitignored (`*.local.json`), and
 compiled into the APK at build time:
 
 ```bash
-cp app/config.example.json app/config.local.json   # then fill in your API URL and token
+backend/.venv/bin/python scripts/write_app_config.py   # fills in the API URL and token
 flutter build apk --dart-define-from-file=config.local.json   # run inside app/
 ```
 
